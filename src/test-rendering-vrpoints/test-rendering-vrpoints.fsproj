@@ -5,6 +5,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="MyLod.fs" />
+    <Compile Include="MyRuntime.fs" />
+    <Compile Include="MySceneGraph.fs" />
+    <Compile Include="MyImport.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
