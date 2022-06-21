@@ -9,6 +9,7 @@
     <Compile Include="MyRuntime.fs" />
     <Compile Include="MySceneGraph.fs" />
     <Compile Include="MyImport.fs" />
+    <Compile Include="Shader.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
