@@ -13,3 +13,6 @@ Aardvark.SceneGraph.IO
 Aardvark.Application.Utilities
 Aardvark.Rendering.PointSet
 Uncodium.SimpleStore
+System.Text.Json
+
+VRVis.Vgm.Api

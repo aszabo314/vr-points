@@ -37,7 +37,8 @@ module Importy =
                 let points = set
 
                 points.Root.Value
-            with _ ->
+            with e ->
+                //Log.error "%A" e
                 store.GetPointCloudNode key
         let bounds = root.Cell.BoundingBox
 

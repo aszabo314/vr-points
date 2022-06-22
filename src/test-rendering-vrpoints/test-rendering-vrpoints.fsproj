@@ -10,6 +10,7 @@
     <Compile Include="MySceneGraph.fs" />
     <Compile Include="MyImport.fs" />
     <Compile Include="Shader.fs" />
+    <Compile Include="SegmentRendering.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 

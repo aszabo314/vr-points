@@ -16,6 +16,11 @@ open Aardvark.Data.Points.Import
 open MySceneGraph
 open Valve.VR
 
+open VRVis.Vgm
+open PointCloudSegmentation
+open PointCloudSegmentation.DynamicSegmentation
+open System.Threading
+
 let pois =
     [
         //"2020078-Eltville_store",1,V3d(3437123.4634,5543482.1291,91.4592),"Buero"
@@ -29,13 +34,24 @@ let pois =
 let main argv = 
     Aardvark.Init()
 
-    use app = new Aardvark.Application.OpenVR.OpenGlVRApplicationLayered(4, DebugLevel.None)
-
+    use app = new Aardvark.Application.OpenVR.OpenGlVRApplicationLayered(4, false)
+    
+    //let store = @"C:\Users\aszabo\bla\innen_store"
+    //let key = Path.combine [(if System.IO.Directory.Exists store then store else System.IO.Path.GetDirectoryName store);"key.txt"] |> File.readAllText
+    let store = @"C:\Users\aszabo\bla\stores\3278_5511_0_10\pointcloud\data.bin"
+    let key = "3278_5511_0_10"
+    let inst = Importy.myImport store (new LruDictionary<_,_>(1<<<20)) key |> Option.get
+    let root = (inst.root.Id :?> IPointCloudNode)
+    let centroid = V3d root.CentroidLocal + root.Cell.GetCenter()
+    
 
     let color = cval true
     let pointSize = cval 5.0
     let planeFit = cval true
     let planeFitRadius = cval 30.0
+
+    
+
     let velocity = 
         app.System.ConnectedControllers |> ASet.toAVal |> AVal.map (fun c ->
             c |> HashSet.toArray
@@ -89,8 +105,74 @@ let main argv =
         //)
     
     let t = AVal.integrate V3d.Zero app.Time [f]
+    
+    let s = cval 1.0
+    
+    let poi = cval centroid
+    
+    let pointCloudtrafo = 
+        adaptive {
+            let! t = t
+            let! s = s
+            return 
+                Trafo3d.Translation -centroid *  
+                Trafo3d.Translation t *
+                Trafo3d.Scale (V3d.III * s) *
+                Trafo3d.Identity
+        }
+        
+    let segmentationResult = cval None
+    let cancelAndResetSegmentation (cts : Option<CancellationTokenSource>) =
+        transact (fun _ -> segmentationResult.Value <- None)
+        cts |> Option.iter (fun c -> c.Cancel())
+    
+    let doDynamicSegmentation (cts : CancellationTokenSource) (seed : V3d) =
+        try 
+            let cfg : PointCloudSegmentation.Config =
+                {
+                    radius = 0.5
+                    planeTolerance = 0.15
+                    normalTolerance = 12.0
+                    maxCount = 15
+                    distanceLimit = 20.0
+                    desiredPpm = 600.0
+                }
+            let cb (state : SegmentationState) (res : SegmentationResult) =
+                if not cts.IsCancellationRequested then 
+                    Log.line "DynSeg result %d" (res.Planes |> Array.sumBy (fun pi -> pi.pointCount))
+                    transact (fun _ -> segmentationResult.Value <- Some res)
+                else 
+                    Log.line "cancelled"
+            let seed : SegmentationSeed = SegmentationSeed.Sphere(Sphere3d(seed, 0.45))
+            let nodes = [Trafo3d.Identity, root]
+            DynamicSegmentation.segmentation' [||] cfg cts.Token None cb seed nodes |> Log.line "DynSeg return %d"
+        with e -> 
+            Log.error "DynSeg e: %A" e
 
+    let segmentationMvar : MVar<Option<V3d>> = MVar.empty()
+    let pickPointAndDoSegmentation (controllerPos : Option<V3d>) =
+        let p = controllerPos |> Option.map (fun cp -> pointCloudtrafo.GetValue().Backward.TransformPos cp)
+        segmentationMvar.Put p
+        Log.line "DynSeg enqueue at %A" p
+        //doDynamicSegmentation p
+    let segmentationPuller = 
+        startThread <| fun () -> 
+            let rec awaitNextSignal (lastCts : Option<CancellationTokenSource>) =
+                match segmentationMvar.Take() with
+                | Some segLoc -> 
+                    cancelAndResetSegmentation lastCts
+                    use cts = new CancellationTokenSource()
+                    Log.line "DynSeg run at %A" segLoc
+                    (startThread <| fun () -> doDynamicSegmentation cts segLoc) |> ignore
+                    awaitNextSignal (Some cts)
+                | None -> 
+                    cancelAndResetSegmentation lastCts
+                    Log.line "DynSeg cleared"
+                    awaitNextSignal None
+            awaitNextSignal None
+                
 
+    let centroid = ()
     use sub = 
         app.System.ConnectedControllers.AddCallback(fun _ d ->
             for d in d do
@@ -117,8 +199,9 @@ let main argv =
                             | Some l ->
                                 let delta : V2d = 10.0 * (p - l)
                                 transact (fun () -> 
-                                    pointSize.Value <- clamp 0.5 20.0 (pointSize.Value + delta.Y)
-                                    planeFitRadius.Value <- clamp 1.0 100.0 (planeFitRadius.Value + delta.X)
+                                    pointSize.Value <- clamp 0.1 15.0 (pointSize.Value + delta.Y)
+                                    let newpfr = clamp 1.0 17.5 (planeFitRadius.Value + delta.X)
+                                    planeFitRadius.Value <- newpfr
                                 )
                                 
                             | None ->
@@ -133,8 +216,17 @@ let main argv =
                         match eventType with
                         | EVREventType.VREvent_ButtonPress -> 
                             match evt.data.controller.button with
-                            | 1u -> printfn "burger"
+                            | 1u -> 
+                                let loc = c.MotionState.Pose.GetValue().Forward.C3.XYZ
+                                //printfn "burger %A" loc
+                                pickPointAndDoSegmentation (Some loc)
                             | 2u -> transact (fun () -> planeFit.Value <- not planeFit.Value)
+                            | _ -> ()
+                        | EVREventType.VREvent_ButtonUnpress -> 
+                            match evt.data.controller.button with
+                            | 1u -> 
+                                //burger unpress
+                                pickPointAndDoSegmentation None
                             | _ -> ()
                         | _ ->
                             ()
@@ -143,35 +235,26 @@ let main argv =
                 | _ ->
                     ()
         )
+    let controllerSgs = 
+        Sg.set (app.System.ConnectedControllers |> ASet.choose (fun c -> 
+            c.Model |> Option.map (fun m -> 
+                m |> Sg.trafo c.MotionState.Pose
+            )
+            
+        ))
+        |> Sg.shader {
+            do! DefaultSurfaces.trafo
+            do! DefaultSurfaces.diffuseTexture
+        }
+        |> Sg.uniform "ViewTrafo" app.Info.viewTrafos
+        |> Sg.uniform "ProjTrafo" app.Info.projTrafos
 
-
-    let store = @"C:\Users\aszabo\bla\innen_store"
-    let key = Path.combine [(if System.IO.Directory.Exists store then store else System.IO.Path.GetDirectoryName store);"key.txt"] |> File.readAllText
-    let inst = Importy.myImport store (new LruDictionary<_,_>(1<<<20)) key |> Option.get
-    let root = (inst.root.Id :?> IPointCloudNode)
-    let centroid = V3d root.CentroidLocal + root.Cell.GetCenter()
-    
-    let s = cval 1.0
-    
-    let poi = cval centroid
-
-    let centerTrafo = 
-        poi |> AVal.map (fun poi -> 
-            let d = poi - centroid
-
-
-            (Trafo3d.Translation -d) *
-            Trafo3d.Translation -centroid * 
-            Trafo3d.Identity
-        )
 
     let cfg = { LodTreeRenderConfig.simple with views = app.Info.viewTrafos; projs = app.Info.projTrafos }
 
     let getPlayerPos() =
         let fw = 
-            Trafo3d.Translation(-centroid) *
-            (Trafo3d.Translation(t.GetValue())) *
-            (Trafo3d.Scale(s.GetValue()*V3d.III)) *
+            pointCloudtrafo.GetValue() *
             app.Info.viewTrafos.GetValue().[0] *
             Trafo3d.Identity
         fw.Backward.C3.XYZ
@@ -187,9 +270,20 @@ let main argv =
     let reset() =
         Log.line "reset"
         transact (fun _ -> 
-            poi.Value <- centroid
             s.Value <- 1.0
         )
+
+
+    let segmentationSg = 
+        (SegmentationSceneGraph.scene 
+            segmentationResult 
+            (pointCloudtrafo |> AVal.map (fun t -> t.Inverse)) 
+            (app.Info.viewTrafos |> AVal.map (Array.item 0))
+            (AVal.constant app.DesiredSize))
+        |> Sg.uniform "ViewTrafo" app.Info.viewTrafos
+        |> Sg.uniform "ProjTrafo" app.Info.projTrafos
+
+
 
     let vis =
         color |> AVal.map (function
@@ -198,15 +292,13 @@ let main argv =
         )
 
 
-    let sg = 
+    let pointCloudSg = 
         Sg.lodTree cfg (ASet.single inst)
         |> Sg.shader {
             do! PointSetShaders.lodPointSize2
             do! PointSetShaders.lodPointCircular
         }
-        |> Sg.trafo centerTrafo
-        |> Sg.translation t
-        |> Sg.scaling (s |> AVal.map ((*)V3d.III))
+        |> Sg.trafo pointCloudtrafo
         |> Sg.uniform "PointSize" pointSize
         |> Sg.uniform' "ViewportSize" app.DesiredSize
         |> Sg.uniform "PointVisualization" vis
@@ -243,7 +335,7 @@ let main argv =
         )
 
 
-    let pass0 = render sg
+    let pass0 = render pointCloudSg
     
     let randomTex = 
         let img = PixImage<float32>(Col.Format.RGB, V2i.II * 512)
@@ -266,7 +358,7 @@ let main argv =
 
         
     let planeFitTol = AVal.constant 0.05
-    let sg =
+    let deferredSg =
         Sg.fullScreenQuad
         |> Sg.shader {
             do! PointSetShaders.blitPlaneFit
@@ -283,6 +375,15 @@ let main argv =
         |> Sg.uniform' "ViewportSize" app.DesiredSize
         |> Sg.uniform "PlaneFitTolerance" planeFitTol
         |> Sg.uniform "PlaneFitRadius" planeFitRadius
+
+    let sg = 
+        Sg.ofList
+            [
+                deferredSg
+                segmentationSg
+                controllerSgs
+            ]
+
 
 
     let thread =
