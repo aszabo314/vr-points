@@ -79,7 +79,19 @@ let main argv =
     let planeFit = cval true
     let planeFitRadius = cval 30.0
 
-    
+    let currentLocalPointerRay =
+        app.System.ConnectedControllers |> ASet.toAVal |> AVal.bind (fun c ->
+            let arr = c |> HashSet.toArray
+            if arr.Length = 0 then AVal.constant None
+            else 
+                let c = arr.[0]
+                c.MotionState.Pose |> AVal.map (fun t -> 
+                    let pos = t.Forward.TransformPos V3d.Zero
+                    let dir = t.Forward.TransformDir V3d.OIO
+                    Ray3d(pos,dir.Normalized) |> Some
+                )
+            
+        )
 
     let velocity = 
         app.System.ConnectedControllers |> ASet.toAVal |> AVal.map (fun c ->
@@ -148,6 +160,40 @@ let main argv =
                 Trafo3d.Identity
         }
         
+    let currentLocalPickRay =
+        currentLocalPointerRay |> AVal.map (fun r  -> 
+            match r with 
+            | None -> None
+            | Some r -> 
+                let p0 = r.Origin
+                let p1 = r.Origin + 2.0 * r.Direction
+                Some (Line3d(p0,p1))
+        )
+    let currentWorldPickRay = 
+        (currentLocalPickRay,pointCloudtrafo) ||> AVal.map2 (fun r t -> 
+            match r with 
+            | None -> None
+            | Some r -> 
+                let p0 = r.P0 |> t.Backward.TransformPos
+                let p1 = r.P1 |> t.Backward.TransformPos
+                Some (Line3d(p0,p1))
+        )
+
+    let getSeed() : Option<V3d> = 
+        currentWorldPickRay.GetValue() |> Option.bind (fun line -> 
+            let roots = roots |> AList.toAVal |> AVal.force |> IndexList.toList |> List.map (fun r -> r)
+            let picks = 
+                roots 
+                |> List.tryPick (fun r -> 
+                    r.QueryPointsNearLineSegment(line,0.1)
+                    |> Seq.tryHead
+                    |> Option.bind (fun chunk -> 
+                        chunk.Positions |> Seq.tryHead
+                    )
+                )
+            picks
+        )   
+
     let segmentationResult = cval None
     let cancelAndResetSegmentation (cts : Option<CancellationTokenSource>) =
         transact (fun _ -> segmentationResult.Value <- None)
@@ -177,22 +223,22 @@ let main argv =
             Log.error "DynSeg e: %A" e
 
     let segmentationMvar : MVar<Option<V3d>> = MVar.empty()
-    let pickPointAndDoSegmentation (controllerPos : Option<V3d>) =
-        let p = controllerPos |> Option.map (fun cp -> pointCloudtrafo.GetValue().Backward.TransformPos cp)
-        segmentationMvar.Put p
-        Log.line "DynSeg enqueue at %A" p
+    let pickPointAndDoSegmentation (bla : Option<V3d>) =
+        //let p = controllerPos |> Option.map (fun cp -> pointCloudtrafo.GetValue().Backward.TransformPos cp)
+        segmentationMvar.Put bla
+        Log.line "DynSeg enqueue"
 
     let segmentationPuller = 
         startThread <| fun () -> 
             let rec awaitNextSignal (lastCts : Option<CancellationTokenSource>) =
-                match segmentationMvar.Take() with
-                | Some segLoc -> 
+                match segmentationMvar.Take(), getSeed() with
+                | Some segLoc, Some seed -> 
                     cancelAndResetSegmentation lastCts
                     use cts = new CancellationTokenSource()
-                    Log.line "DynSeg run at %A" segLoc
-                    (startThread <| fun () -> doDynamicSegmentation cts segLoc) |> ignore
+                    Log.line "DynSeg run"
+                    (startThread <| fun () -> doDynamicSegmentation cts seed) |> ignore
                     awaitNextSignal (Some cts)
-                | None -> 
+                | _ -> 
                     cancelAndResetSegmentation lastCts
                     Log.line "DynSeg cleared"
                     awaitNextSignal None
@@ -226,8 +272,8 @@ let main argv =
                             | Some l ->
                                 let delta : V2d = 10.0 * (p - l)
                                 transact (fun () -> 
-                                    pointSize.Value <- clamp 0.1 15.0 (pointSize.Value + delta.Y)
-                                    let newpfr = clamp 1.0 17.5 (planeFitRadius.Value + delta.X)
+                                    pointSize.Value <- clamp 0.1 10.0 (pointSize.Value + delta.Y)
+                                    let newpfr = clamp 1.0 12.5 (planeFitRadius.Value + delta.X)
                                     planeFitRadius.Value <- newpfr
                                 )
                                 
@@ -244,18 +290,18 @@ let main argv =
                         | EVREventType.VREvent_ButtonPress -> 
                             match evt.data.controller.button with
                             | 1u -> 
-                                let loc = c.MotionState.Pose.GetValue().Forward.C3.XYZ
                                 //printfn "burger %A" loc
-                                pickPointAndDoSegmentation (Some loc)
+                                pickPointAndDoSegmentation (Some V3d.Zero)
                             | 2u ->  //squeeze
                                 //transact (fun () -> planeFit.Value <- not planeFit.Value)
-                                ()
+                                pickPointAndDoSegmentation None
                             | _ -> ()
                         | EVREventType.VREvent_ButtonUnpress -> 
                             match evt.data.controller.button with
                             | 1u -> 
                                 //burger unpress
-                                pickPointAndDoSegmentation None
+                                //pickPointAndDoSegmentation None
+                                ()
                             | _ -> ()
                         | _ ->
                             ()
@@ -299,7 +345,6 @@ let main argv =
             s.Value <- 1.0
         )
 
-
     let segmentationSg = 
         (SegmentationSceneGraph.scene 
             segmentationResult 
@@ -309,14 +354,11 @@ let main argv =
         |> Sg.uniform "ViewTrafo" app.Info.viewTrafos
         |> Sg.uniform "ProjTrafo" app.Info.projTrafos
 
-
-
     let vis =
         color |> AVal.map (function
             | true -> PointVisualization.Color
             | false -> PointVisualization.None
         )
-
 
     let pointCloudSg = 
         Sg.lodTree cfg (ASet.ofAList inst)
@@ -402,12 +444,29 @@ let main argv =
         |> Sg.uniform "PlaneFitTolerance" planeFitTol
         |> Sg.uniform "PlaneFitRadius" planeFitRadius
 
+    let localPickSg =
+        let onoff = 
+            currentLocalPickRay |> AVal.map Option.isSome
+        Sg.lines (AVal.constant C4b.Red) (currentLocalPickRay |> AVal.map (fun l -> l |> Option.map (fun l -> Array.singleton l) |> Option.defaultValue Array.empty))
+        |> Sg.shader {
+            do! DefaultSurfaces.trafo
+            do! DefaultSurfaces.thickLine
+            do! DefaultSurfaces.vertexColor
+        }
+        //|> Sg.onOff onoff
+        |> Sg.uniform "LineWidth" (AVal.constant 10.0)
+        |> Sg.uniform "ViewTrafo" app.Info.viewTrafos
+        |> Sg.uniform "ProjTrafo" app.Info.projTrafos
+        //|> Sg.depthTest (AVal.constant DepthTest.None)
+
+
     let sg = 
         Sg.ofList
             [
                 deferredSg
                 segmentationSg
                 controllerSgs
+                localPickSg
             ]
 
 
