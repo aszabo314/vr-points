@@ -31,13 +31,17 @@ open System.Threading
 let clouds =
     [
         @"D:\jb_large_store", None, "jb_large"
+        @"D:\jb_innen" ,None, "jb_innen"
+        @"D:\erzberg_toni\data.bin", None, "erzberg_toni"
     ]
     |> List.map (fun (path,key : Option<string>,name) -> name,(path,key))
     |> Map.ofList
 
 let pois =
     [
-        "jb_large",Map.ofList [1,V3d(0.0000,0.0000,0.0000); 2,V3d(14.5369,-11.3891,2.2123)]
+        "jb_large",Map.ofList [1,("origin",V3d(0.0000,0.0000,0.0000)); 2,("cpunz",V3d(14.5369,-11.3891,2.2123))]
+        "jb_innen",Map.ofList [1,("origin",V3d.Zero); 2,("cats",V3d(0.3707,-2.5859,1.1892))]
+        "erzberg_toni",Map.ofList [1,("origin",V3d.Zero);2,("haupttunnel",V3d(-26.4179,-47.3222,2.6271));3,("fahrzeuge_weiss",V3d(-78.5379,-95.6031,4.0055));4,("fahrzeuge_orange",V3d(-84.4132,-57.3557,4.2753));5,("eingang_schnee",V3d(16.0356,291.3683,-0.0592));6,("creepy_gang",V3d(-118.5345,297.4212,-0.3954))]
     ]
     |> Map.ofList
 let cache = new LruDictionary<_,_>(1<<<20)
@@ -59,7 +63,7 @@ let main argv =
 
     use app = new Aardvark.Application.OpenVR.OpenGlVRApplicationLayered(4, false)
     
-    let curKey = cval ((clouds |> Seq.head).Key)
+    let curKey = cval ("jb_large")
     let curStore = curKey |> AVal.map (fun k -> Map.find k clouds)
 
     let inst = 
@@ -117,6 +121,7 @@ let main argv =
     let sw = System.Diagnostics.Stopwatch.StartNew()
     let t0 = DateTime.Now
     let t = app.Time |> AVal.map (fun _ -> t0 + sw.Elapsed)
+    let speed = cval 1.0
 
     let customT : ref<Option<V3d>> = ref None
     let f = 
@@ -124,12 +129,13 @@ let main argv =
         let res =
             AdaptiveFunc<V3d>(fun res o ->
                 let s = t.GetValue res
+                let speed = speed.GetValue res
                 let dt : TimeSpan = s - !oldState
                 let newA = 
                     match !customT with 
                     | None -> 
                         let v = velocity.GetValue res
-                        o + v * dt.TotalSeconds
+                        o + speed * v * dt.TotalSeconds
                     | Some custom -> 
                         customT.Value <- None 
                         custom
@@ -332,7 +338,7 @@ let main argv =
     let setPlayerT i =
         try
             let name = curKey.GetValue()
-            let t = pois.[name].[i]
+            let (_pn,t) = pois.[name].[i]
             customT.Value <- Some t
             Log.line "set player pos %s to %d %A" name i t
         with e -> 
@@ -469,8 +475,25 @@ let main argv =
                 localPickSg
             ]
 
-
-
+    let printInfo() =
+        Log.line "PointClouds:"
+        let curkey = curKey.GetValue()
+        let cloudKeys = 
+            [
+                "jb_large","P"
+                "jb_innen","O"
+                "erzberg_toni","I"
+            ] |> Map.ofList
+        for k in clouds  |> Map.toArray |> Array.map fst do
+            let key = cloudKeys |> Map.find k
+            if curkey = k then 
+                Log.line " ((%s)) %s" key k
+            else 
+                Log.line " (%s) %s" key k
+        Log.line "Points of Interest for %s:" curkey
+        for (number,(name,coord)) in pois |> Map.find curkey |> Map.toSeq do
+            Log.line " (%d) %s [%.2f,%.2f,%.2f]" number name coord.X coord.Y coord.Z
+        Log.line "(W/S) Speed = %.1f" (speed.GetValue())
     let thread =
         startThread <| fun () ->
             while true do
@@ -482,24 +505,27 @@ let main argv =
                 match l.KeyChar with
                 //| 'd' -> transact (fun () -> t.Value <- t.Value + 0.5 * r)
                 //| 'a' -> transact (fun () -> t.Value <- t.Value - 0.5 * r)
-                //| 'w' -> transact (fun () -> t.Value <- t.Value + 0.5 * f)
-                //| 's' -> transact (fun () -> t.Value <- t.Value - 0.5 * f)
+                | 'w' -> transact (fun () -> speed.Value <- clamp 0.0 100.0 (speed.Value + 0.5)); Log.line "speed=%.1f" speed.Value
+                | 's' -> transact (fun () -> speed.Value <- clamp 0.0 100.0 (speed.Value - 0.5)); Log.line "speed=%.1f" speed.Value
                 //| 'c' -> transact (fun () -> t.Value <- t.Value + 0.25 * u)
                 //| 'e' -> transact (fun () -> t.Value <- t.Value - 0.25 * u)
-                | 't' -> transact (fun () -> s.Value <- s.Value + 0.02)
-                | 'r' -> transact (fun () -> s.Value <- s.Value - 0.02)
+                //| 't' -> transact (fun () -> s.Value <- s.Value + 0.02)
+                //| 'r' -> transact (fun () -> s.Value <- s.Value - 0.02)
                 | 'm' -> printfn "\"%s\",%s" (curKey.GetValue()) (getPlayerT() |> (fun v -> sprintf "V3d(%.4f,%.4f,%.4f)" v.X v.Y v.Z))
-                | 'l' -> reset()
+                | 'l' -> printInfo()
                 | '1' -> setPlayerT 1
                 | '2' -> setPlayerT 2
-                //| '3' -> setPlayerPosToPoi 3
-                //| '4' -> setPlayerPosToPoi 4
-                //| '5' -> setPlayerPosToPoi 5
-                //| '6' -> setPlayerPosToPoi 6
-                //| '7' -> setPlayerPosToPoi 7
-                //| '8' -> setPlayerPosToPoi 8
-                //| '9' -> setPlayerPosToPoi 9
-                //| '0' -> setPlayerPosToPoi 0
+                | '3' -> setPlayerT 3
+                | '4' -> setPlayerT 4
+                | '5' -> setPlayerT 5
+                | '6' -> setPlayerT 6
+                | '7' -> setPlayerT 7
+                | '8' -> setPlayerT 8
+                | '9' -> setPlayerT 9
+                | '0' -> setPlayerT 0
+                | 'p' -> transact (fun _ -> curKey.Value <- "jb_large")
+                | 'o' -> transact (fun _ -> curKey.Value <- "jb_innen")
+                | 'i' -> transact (fun _ -> curKey.Value <- "erzberg_toni")
                 | _ -> ()
     
     app.RenderTask <- app.Runtime.CompileRender(app.FramebufferSignature, sg)
