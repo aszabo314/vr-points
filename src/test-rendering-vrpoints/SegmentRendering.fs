@@ -24,6 +24,36 @@ open PointCloudSegmentation
 open PointCloudSegmentation.DynamicSegmentation
 
 
+    //let t =
+    //    let m = M44d(        0.958058901193302,
+    //        -0.286571355589288,
+    //        0,
+    //        -7311.5304327031,
+    //        0.286571355589288,
+    //        0.958058901193302,
+    //        0,
+    //        256905.212901514,
+    //        0,
+    //        0,
+    //        1,
+    //        706.748557267515,
+    //        0,
+    //        0,
+    //        0,
+    //        1)
+    //    Trafo3d(m,m.Inverse)
+    //let store = @"D:\jb_innen"
+    //let key = 
+    //    let k = Path.combine [(if System.IO.Directory.Exists store then store else System.IO.Path.GetDirectoryName store);"key.txt"] |> File.readAllText
+    //    k.Trim([|' ';'\t';'\r';'\n'|])
+    //let store = @"C:\Users\aszabo\bla\stores\3278_5511_0_10\pointcloud\data.bin"
+    //let key = "3278_5511_0_10"
+    //let tt (l : LodTreeInstance) = 
+    //    let root = (l.root.Id :?> IPointCloudNode)
+    //    let c = V3d root.CentroidLocal + root.Cell.GetCenter()
+    //    let trafo = (Trafo3d.Translation -c)
+    //    LodTreeInstance.transform trafo l
+
 
 [<ReflectedDefinition>]
 module Shader =

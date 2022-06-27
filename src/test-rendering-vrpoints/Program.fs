@@ -21,14 +21,37 @@ open PointCloudSegmentation
 open PointCloudSegmentation.DynamicSegmentation
 open System.Threading
 
+//let pois =
+//    [
+//        //"2020078-Eltville_store",1,V3d(3437123.4634,5543482.1291,91.4592),"Buero"
+//    ]
+//    |> List.map (fun (pc,num,loc,name) -> (pc,num),(loc,name))
+//    |> Map.ofList
+
+let clouds =
+    [
+        @"D:\jb_large_store", None, "jb_large"
+    ]
+    |> List.map (fun (path,key : Option<string>,name) -> name,(path,key))
+    |> Map.ofList
+
 let pois =
     [
-        //"2020078-Eltville_store",1,V3d(3437123.4634,5543482.1291,91.4592),"Buero"
-        "innen_store",1,V3d(-64.6625,-12.0023,349.9444),"asduh"
-        "innen_store",2,V3d(-76.9321,-18.2107,349.9959),"aus"
+        "jb_large",Map.ofList [1,V3d(0.0000,0.0000,0.0000); 2,V3d(14.5369,-11.3891,2.2123)]
     ]
-    |> List.map (fun (pc,num,loc,name) -> (pc,num),(loc,name))
     |> Map.ofList
+let cache = new LruDictionary<_,_>(1<<<20)
+
+let get' (store : string) (key : Option<string>) =
+    let key = 
+        match key with 
+        | Some k -> k
+        | None -> 
+            let k = Path.combine [(if System.IO.Directory.Exists store then store else System.IO.Path.GetDirectoryName store);"key.txt"] |> File.readAllText
+            k.Trim([|' ';'\t';'\r';'\n'|])
+    Importy.myImport store cache key |> Option.get
+let get (store : string) =
+    get' store None
 
 [<EntryPoint;STAThread>]
 let main argv = 
@@ -36,14 +59,20 @@ let main argv =
 
     use app = new Aardvark.Application.OpenVR.OpenGlVRApplicationLayered(4, false)
     
-    //let store = @"C:\Users\aszabo\bla\innen_store"
-    //let key = Path.combine [(if System.IO.Directory.Exists store then store else System.IO.Path.GetDirectoryName store);"key.txt"] |> File.readAllText
-    let store = @"C:\Users\aszabo\bla\stores\3278_5511_0_10\pointcloud\data.bin"
-    let key = "3278_5511_0_10"
-    let inst = Importy.myImport store (new LruDictionary<_,_>(1<<<20)) key |> Option.get
-    let root = (inst.root.Id :?> IPointCloudNode)
-    let centroid = V3d root.CentroidLocal + root.Cell.GetCenter()
-    
+    let curKey = cval ((clouds |> Seq.head).Key)
+    let curStore = curKey |> AVal.map (fun k -> Map.find k clouds)
+
+    let inst = 
+        curStore |> AVal.map (fun (store,key) -> 
+            [
+                match key with 
+                | Some k -> yield get' store (Some k)
+                | None -> yield get store
+            ]
+         ) |> AList.ofAVal
+    let roots = inst |> AList.map (fun t -> (t.root.Id :?> IPointCloudNode))
+    let centroid = roots |> AList.mapi (fun i root -> V3d root.CentroidLocal + root.Cell.GetCenter())
+
 
     let color = cval true
     let pointSize = cval 5.0
@@ -77,14 +106,21 @@ let main argv =
     let t0 = DateTime.Now
     let t = app.Time |> AVal.map (fun _ -> t0 + sw.Elapsed)
 
+    let customT : ref<Option<V3d>> = ref None
     let f = 
         let oldState = ref Unchecked.defaultof<_> 
         let res =
             AdaptiveFunc<V3d>(fun res o ->
                 let s = t.GetValue res
                 let dt : TimeSpan = s - !oldState
-                let v = velocity.GetValue res
-                let newA = o + v * dt.TotalSeconds
+                let newA = 
+                    match !customT with 
+                    | None -> 
+                        let v = velocity.GetValue res
+                        o + v * dt.TotalSeconds
+                    | Some custom -> 
+                        customT.Value <- None 
+                        custom
                 oldState := s 
                 newA
             )
@@ -95,27 +131,18 @@ let main argv =
 
         AVal.constant res
 
-        //velocity |> AVal.map (fun v ->
-        //    if v = V3d.Zero then
-        //        AdaptiveFunc.Identity
-        //    else
-        //        t |> AVal.stepTime (fun _ dt (off : V3d) ->
-        //            dt.TotalSeconds * v + off
-        //        )
-        //)
     
     let t = AVal.integrate V3d.Zero app.Time [f]
     
     let s = cval 1.0
     
-    let poi = cval centroid
-    
     let pointCloudtrafo = 
         adaptive {
             let! t = t
             let! s = s
+            let! cs = (AList.toAVal centroid)
             return 
-                Trafo3d.Translation -centroid *  
+                Trafo3d.Translation -(List.average (cs |> IndexList.toList)) *  
                 Trafo3d.Translation t *
                 Trafo3d.Scale (V3d.III * s) *
                 Trafo3d.Identity
@@ -144,7 +171,7 @@ let main argv =
                 else 
                     Log.line "cancelled"
             let seed : SegmentationSeed = SegmentationSeed.Sphere(Sphere3d(seed, 0.45))
-            let nodes = [Trafo3d.Identity, root]
+            let nodes = roots |> AList.toAVal |> AVal.force |> IndexList.toList |> List.map (fun r -> Trafo3d.Identity, r)
             DynamicSegmentation.segmentation' [||] cfg cts.Token None cb seed nodes |> Log.line "DynSeg return %d"
         with e -> 
             Log.error "DynSeg e: %A" e
@@ -154,7 +181,7 @@ let main argv =
         let p = controllerPos |> Option.map (fun cp -> pointCloudtrafo.GetValue().Backward.TransformPos cp)
         segmentationMvar.Put p
         Log.line "DynSeg enqueue at %A" p
-        //doDynamicSegmentation p
+
     let segmentationPuller = 
         startThread <| fun () -> 
             let rec awaitNextSignal (lastCts : Option<CancellationTokenSource>) =
@@ -220,7 +247,9 @@ let main argv =
                                 let loc = c.MotionState.Pose.GetValue().Forward.C3.XYZ
                                 //printfn "burger %A" loc
                                 pickPointAndDoSegmentation (Some loc)
-                            | 2u -> transact (fun () -> planeFit.Value <- not planeFit.Value)
+                            | 2u ->  //squeeze
+                                //transact (fun () -> planeFit.Value <- not planeFit.Value)
+                                ()
                             | _ -> ()
                         | EVREventType.VREvent_ButtonUnpress -> 
                             match evt.data.controller.button with
@@ -252,20 +281,17 @@ let main argv =
 
     let cfg = { LodTreeRenderConfig.simple with views = app.Info.viewTrafos; projs = app.Info.projTrafos }
 
-    let getPlayerPos() =
-        let fw = 
-            pointCloudtrafo.GetValue() *
-            app.Info.viewTrafos.GetValue().[0] *
-            Trafo3d.Identity
-        fw.Backward.C3.XYZ
-
-    let myname = if Directory.Exists store then Path.GetFileName store else Path.GetFileName(System.IO.Path.GetDirectoryName store)
-    let setPlayerPosToPoi (i : int) =
-        match Map.tryFind (myname,i) pois with
-        | Some(loc,name) -> 
-            Log.line "Jump to %s,%d: %s" myname i name
-            transact(fun _ -> poi.Value <- loc)
-        | None -> Log.warn "No POI: %s, %d" myname i
+    let getPlayerT() = 
+        t.GetValue()
+    let setPlayerT i =
+        try
+            let name = curKey.GetValue()
+            let t = pois.[name].[i]
+            customT.Value <- Some t
+            Log.line "set player pos %s to %d %A" name i t
+        with e -> 
+            Log.error "poi not found: %d" i
+            ()
 
     let reset() =
         Log.line "reset"
@@ -293,7 +319,7 @@ let main argv =
 
 
     let pointCloudSg = 
-        Sg.lodTree cfg (ASet.single inst)
+        Sg.lodTree cfg (ASet.ofAList inst)
         |> Sg.shader {
             do! PointSetShaders.lodPointSize2
             do! PointSetShaders.lodPointCircular
@@ -403,18 +429,18 @@ let main argv =
                 //| 'e' -> transact (fun () -> t.Value <- t.Value - 0.25 * u)
                 | 't' -> transact (fun () -> s.Value <- s.Value + 0.02)
                 | 'r' -> transact (fun () -> s.Value <- s.Value - 0.02)
-                | 'm' -> printfn "\"%s\",%s" myname (getPlayerPos() |> (fun v -> sprintf "V3d(%.4f,%.4f,%.4f)" v.X v.Y v.Z))
+                | 'm' -> printfn "\"%s\",%s" (curKey.GetValue()) (getPlayerT() |> (fun v -> sprintf "V3d(%.4f,%.4f,%.4f)" v.X v.Y v.Z))
                 | 'l' -> reset()
-                | '1' -> setPlayerPosToPoi 1
-                | '2' -> setPlayerPosToPoi 2
-                | '3' -> setPlayerPosToPoi 3
-                | '4' -> setPlayerPosToPoi 4
-                | '5' -> setPlayerPosToPoi 5
-                | '6' -> setPlayerPosToPoi 6
-                | '7' -> setPlayerPosToPoi 7
-                | '8' -> setPlayerPosToPoi 8
-                | '9' -> setPlayerPosToPoi 9
-                | '0' -> setPlayerPosToPoi 0
+                | '1' -> setPlayerT 1
+                | '2' -> setPlayerT 2
+                //| '3' -> setPlayerPosToPoi 3
+                //| '4' -> setPlayerPosToPoi 4
+                //| '5' -> setPlayerPosToPoi 5
+                //| '6' -> setPlayerPosToPoi 6
+                //| '7' -> setPlayerPosToPoi 7
+                //| '8' -> setPlayerPosToPoi 8
+                //| '9' -> setPlayerPosToPoi 9
+                //| '0' -> setPlayerPosToPoi 0
                 | _ -> ()
     
     app.RenderTask <- app.Runtime.CompileRender(app.FramebufferSignature, sg)
