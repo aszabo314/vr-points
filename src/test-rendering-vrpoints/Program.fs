@@ -31,17 +31,94 @@ open System.Threading
 let clouds =
     [
         @"D:\jb_large_store", None, "jb_large"
-        @"D:\jb_innen" ,None, "jb_innen"
+        @"D:\3278_5511_0_10\pointcloud\data.bin", (Some "3278_5511_0_10"), "koeln"
         @"D:\erzberg_toni\data.bin", None, "erzberg_toni"
+        @"D:\store_BLK ARC-2050303-42\BLK ARC-2050303-42", None, "georg_wald"
+        @"D:\store_17-03-2022_scan-41\17-03-2022_scan-41 1", None, "georg_haus"
+        @"D:\innen_store\data.bin", None, "techzentrum"
+        @"D:\KaunertalStore", None, "kaunertal"
+        @"D:\store3\data.bin", None, "himmelreich"
     ]
     |> List.map (fun (path,key : Option<string>,name) -> name,(path,key))
     |> Map.ofList
 
 let pois =
     [
-        "jb_large",Map.ofList [1,("origin",V3d(0.0000,0.0000,0.0000)); 2,("cpunz",V3d(14.5369,-11.3891,2.2123))]
-        "jb_innen",Map.ofList [1,("origin",V3d.Zero); 2,("cats",V3d(0.3707,-2.5859,1.1892))]
-        "erzberg_toni",Map.ofList [1,("origin",V3d.Zero);2,("haupttunnel",V3d(-26.4179,-47.3222,2.6271));3,("fahrzeuge_weiss",V3d(-78.5379,-95.6031,4.0055));4,("fahrzeuge_orange",V3d(-84.4132,-57.3557,4.2753));5,("eingang_schnee",V3d(16.0356,291.3683,-0.0592));6,("creepy_gang",V3d(-118.5345,297.4212,-0.3954))]
+        "jb_large",Map.ofList 
+            [
+                1,("origin",V3d(0.0000,0.0000,0.0000))
+                2,("cpunz",V3d(14.5369,-11.3891,2.2123))
+                3,("alien",V3d(-16.7355,-6.8227,-0.3040))
+                4,("eingangstuer",V3d(-8.9254,0.5787,0.4679))
+                5,("schaukel",V3d(9.8840,5.8154,3.3978))
+                6,("dach",V3d(4.2659,5.1292,-6.7622))
+            ]
+        "erzberg_toni",Map.ofList 
+            [
+                1,("origin",V3d.Zero)
+                2,("haupttunnel",V3d(-26.8944,-48.1361,3.8753))
+                3,("fahrzeuge_weiss",V3d(-80.0564,-95.1948,4.6572))
+                4,("fahrzeuge_orange",V3d(-82.1689,-62.9014,4.3702))
+                5,("eingang_schnee",V3d(16.0356,291.3683,-0.0592))
+                6,("creepy_gang",V3d(-118.5345,297.4212,-0.3954))
+                7,("vogelperspektive",V3d(58.7516,16.9669,-94.4066))
+                8,("servicegang",V3d(106.5624,-30.9442,1.5828))
+                9,("creepy_eingang",V3d(-122.9496,372.6927,-1.9341))
+            ]
+        "georg_wald",Map.ofList 
+            [
+                1,("origin",V3d.Zero)
+                2,("huegel",V3d(-24.8602,12.9335,3.3191))
+                3,("auto",V3d(-149.5556,95.8487,51.4895))
+                4,("vogelperspektive",V3d(-39.4971,14.2139,-60.3953))
+                5,("huegel_oben",V3d(138.7763,-162.5310,-55.6492))
+                6,("kurve",V3d(-82.3435,112.0376,41.6321))
+            ]
+        "georg_haus",Map.ofList 
+            [
+                1,("origin",V3d.Zero)
+                2,("kueche",V3d(3.2566,-0.8960,1.6695))
+                3,("wohnbereich",V3d(-1.0947,-0.5023,1.5162))
+                4,("kinderzimmer",V3d(-3.9321,-1.1939,1.5372))
+                5,("schlafzimmer",V3d(-4.0844,2.2880,1.5132))
+            ]
+        "koeln",Map.ofList 
+            [
+                1,("originstrasse",V3d(3.7907,2.3028,0.7818))
+                2,("vogelperspektive",V3d(-14.5481,-187.1479,-149.0140))
+                3,("unter_bruecke",V3d(79.5184,-470.5748,3.6630))
+                4,("kreisverkehr_gehsteigkante",V3d(379.9717,-381.6181,1.9463))
+                5,("fussgaengerbruecke",V3d(418.2195,-473.1021,2.3969))
+                6,("spielplatz",V3d(-162.6086,-72.1859,4.2214))
+                7,("kreuzung",V3d(317.0050,14.7436,0.8331))
+                8,("orange_strasse",V3d(231.3207,-290.0860,1.1631))
+            ]
+        "techzentrum",Map.ofList 
+            [
+                1,("origin",V3d.Zero)
+                2,("rotes_sofa",V3d(-6.5314,-2.8540,1.0798))
+                3,("empfang",V3d(-6.1924,4.2434,1.1334))
+                4,("cpunz",V3d(-27.3736,1.8913,1.1070))
+                5,("strasse",V3d(-26.5605,-9.3756,2.5877))
+                6,("auto",V3d(-12.7791,-15.4265,3.9160))
+                7,("feuerloescher",V3d(7.9868,2.6521,1.1194))
+                8,("spielzimmer",V3d(19.6353,-0.8480,1.0997))
+                9,("spielzimmer_menschen",V3d(18.0555,3.3676,1.0902))
+            ]
+        "kaunertal",Map.ofList 
+            [
+                1,("origin",V3d.Zero)
+                2,("vogelperspektive",V3d(-60.8245,36.0486,-58.7428))
+                3,("runtergucken",V3d(21.4004,-22.8059,-48.7169))
+                4,("bagger",V3d(58.7386,60.7998,-25.0895))
+                5,("steinwand",V3d(8.6249,43.9014,-8.3841))
+                6,("steil",V3d(-37.8224,13.9814,34.8854))
+                7,("unten",V3d(-104.0170,2.5848,91.4539))
+            ]
+        "himmelreich",Map.ofList 
+            [
+                1,("origin",V3d.Zero)
+            ]
     ]
     |> Map.ofList
 let cache = new LruDictionary<_,_>(1<<<20)
@@ -81,7 +158,7 @@ let main argv =
     let color = cval true
     let pointSize = cval 5.0
     let planeFit = cval true
-    let planeFitRadius = cval 30.0
+    let planeFitRadius = cval 12.5
 
     let currentLocalPointerRay =
         app.System.ConnectedControllers |> ASet.toAVal |> AVal.bind (fun c ->
@@ -121,7 +198,7 @@ let main argv =
     let sw = System.Diagnostics.Stopwatch.StartNew()
     let t0 = DateTime.Now
     let t = app.Time |> AVal.map (fun _ -> t0 + sw.Elapsed)
-    let speed = cval 1.0
+    let speed = cval 0.0
 
     let customT : ref<Option<V3d>> = ref None
     let f = 
@@ -210,11 +287,11 @@ let main argv =
             let cfg : PointCloudSegmentation.Config =
                 {
                     radius = 0.5
-                    planeTolerance = 0.15
+                    planeTolerance = 0.10
                     normalTolerance = 12.0
                     maxCount = 15
                     distanceLimit = 20.0
-                    desiredPpm = 600.0
+                    desiredPpm = 900.0
                 }
             let cb (state : SegmentationState) (res : SegmentationResult) =
                 if not cts.IsCancellationRequested then 
@@ -338,9 +415,9 @@ let main argv =
     let setPlayerT i =
         try
             let name = curKey.GetValue()
-            let (_pn,t) = pois.[name].[i]
+            let (pn,t) = pois.[name].[i]
             customT.Value <- Some t
-            Log.line "set player pos %s to %d %A" name i t
+            Log.line "set player pos %s to %d %s %A" name i pn t
         with e -> 
             Log.error "poi not found: %d" i
             ()
@@ -481,8 +558,13 @@ let main argv =
         let cloudKeys = 
             [
                 "jb_large","P"
-                "jb_innen","O"
+                "koeln","O"
                 "erzberg_toni","I"
+                "georg_wald","U"
+                "georg_haus","Z"
+                "techzentrum","T"
+                "kaunertal","R"
+                "himmelreich","E"
             ] |> Map.ofList
         for k in clouds  |> Map.toArray |> Array.map fst do
             let key = cloudKeys |> Map.find k
@@ -494,6 +576,9 @@ let main argv =
         for (number,(name,coord)) in pois |> Map.find curkey |> Map.toSeq do
             Log.line " (%d) %s [%.2f,%.2f,%.2f]" number name coord.X coord.Y coord.Z
         Log.line "(W/S) Speed = %.1f" (speed.GetValue())
+        Log.line "(C) Color = %b" (color.GetValue())
+        Log.line "(Q) pointrendering defaults"
+        Log.line "(X) clear segmentation"
     let thread =
         startThread <| fun () ->
             while true do
@@ -507,9 +592,9 @@ let main argv =
                 //| 'a' -> transact (fun () -> t.Value <- t.Value - 0.5 * r)
                 | 'w' -> transact (fun () -> speed.Value <- clamp 0.0 100.0 (speed.Value + 0.5)); Log.line "speed=%.1f" speed.Value
                 | 's' -> transact (fun () -> speed.Value <- clamp 0.0 100.0 (speed.Value - 0.5)); Log.line "speed=%.1f" speed.Value
-                //| 'c' -> transact (fun () -> t.Value <- t.Value + 0.25 * u)
-                //| 'e' -> transact (fun () -> t.Value <- t.Value - 0.25 * u)
-                //| 't' -> transact (fun () -> s.Value <- s.Value + 0.02)
+                | 'c' -> transact (fun () -> color.Value <- not color.Value); Log.line "Color=%b" color.Value
+                | 'q' -> transact (fun () -> color.Value <- true; pointSize.Value <- 5.0; planeFit.Value <- true; planeFitRadius.Value <- 12.5); Log.line "Pointrendering reset to defaults."
+                | 'x' -> pickPointAndDoSegmentation None
                 //| 'r' -> transact (fun () -> s.Value <- s.Value - 0.02)
                 | 'm' -> printfn "\"%s\",%s" (curKey.GetValue()) (getPlayerT() |> (fun v -> sprintf "V3d(%.4f,%.4f,%.4f)" v.X v.Y v.Z))
                 | 'l' -> printInfo()
@@ -523,9 +608,14 @@ let main argv =
                 | '8' -> setPlayerT 8
                 | '9' -> setPlayerT 9
                 | '0' -> setPlayerT 0
-                | 'p' -> transact (fun _ -> curKey.Value <- "jb_large")
-                | 'o' -> transact (fun _ -> curKey.Value <- "jb_innen")
-                | 'i' -> transact (fun _ -> curKey.Value <- "erzberg_toni")
+                | 'p' -> let s = "jb_large"     in transact (fun _ -> curKey.Value <-  s); Log.line "switched to %s" s
+                | 'o' -> let s = "koeln"     in transact (fun _ -> curKey.Value <-  s); Log.line "switched to %s" s
+                | 'i' -> let s = "erzberg_toni" in transact (fun _ -> curKey.Value <-  s); Log.line "switched to %s" s
+                | 'u' -> let s = "georg_wald"   in transact (fun _ -> curKey.Value <-  s); Log.line "switched to %s" s
+                | 'z' -> let s = "georg_haus"   in transact (fun _ -> curKey.Value <-  s); Log.line "switched to %s" s
+                | 't' -> let s = "techzentrum"   in transact (fun _ -> curKey.Value <-  s); Log.line "switched to %s" s
+                | 'r' -> let s = "kaunertal"   in transact (fun _ -> curKey.Value <-  s); Log.line "switched to %s" s
+                | 'e' -> let s = "himmelreich"   in transact (fun _ -> curKey.Value <-  s); Log.line "switched to %s" s
                 | _ -> ()
     
     app.RenderTask <- app.Runtime.CompileRender(app.FramebufferSignature, sg)
